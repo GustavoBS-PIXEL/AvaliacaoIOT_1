@@ -1,0 +1,31 @@
+/* Container de vídeo simulando um player 16:9 */
+.camera-placeholder {
+    height: 220px;
+    width: 100%;
+    position: relative; /* Necessário para posicionar o menu sobre ele */
+    background-color: #000; /* Fundo preto padrão de vídeo */
+}
+
+/* Transição do painel de senha */
+#camposAutenticacao {
+    transition: all 0.3s ease-in-out;
+}
+
+/* Menu de contexto (Três pontos) flutuante sobre a câmera */
+.camera-menu-overlay {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+}
+
+/* Limpa o botão transparente padrão do dropdown para não atrapalhar o vídeo */
+.camera-menu-overlay .btn {
+    background-color: rgba(255, 255, 255, 0.8);
+    border: none;
+    padding: 0.2rem 0.5rem;
+}
+
+.camera-menu-overlay .btn:hover {
+    background-color: white;
+}

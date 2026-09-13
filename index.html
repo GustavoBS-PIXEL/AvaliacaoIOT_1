@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Segurança IoT</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Seu CSS personalizado -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="bg-light">
+
+    <!-- Barra de Navegação -->
+    <nav class="navbar navbar-dark bg-dark mb-4 shadow-sm">
+        <div class="container">
+            <span class="navbar-brand mb-0 h1"><i class="bi bi-shield-check text-success"></i> Gestão de Segurança Patrimonial</span>
+            <div>
+                <button class="btn btn-outline-light me-2" data-bs-toggle="modal" data-bs-target="#modalGrupos">
+                    <i class="bi bi-folder"></i> Gerenciar Grupos
+                </button>
+                <button class="btn btn-primary" onclick="abrirModalCamera()">
+                    <i class="bi bi-plus-lg"></i> Adicionar Dispositivo
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Container Principal -->
+    <div class="container">
+        
+        <!-- Estado Vazio (Aparece quando não há câmeras) -->
+        <div id="estadoVazio" class="text-center py-5 d-none">
+            <i class="bi bi-camera-video text-muted" style="font-size: 4rem;"></i>
+            <h3 class="text-muted mt-3">Você ainda não tem nenhum dispositivo conectado</h3>
+            <p class="text-muted">Clique em "Adicionar Dispositivo" para começar a monitorar.</p>
+        </div>
+
+        <!-- Área de Navegação por Grupos (Abas) -->
+        <ul class="nav nav-tabs mb-4" id="grupoTabs" role="tablist">
+            <!-- As abas serão injetadas aqui pelo JS -->
+        </ul>
+
+        <!-- Área dos Vídeos (Conteúdo das Abas) -->
+        <div class="tab-content" id="grupoTabsContent">
+            <!-- As grades de câmeras serão injetadas aqui pelo JS -->
+        </div>
+
+    </div>
+
+    <!-- MODAL: Adicionar/Editar Câmera -->
+    <div class="modal fade" id="modalCamera" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title" id="tituloModalCamera">Novo Dispositivo de Vídeo</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="formCamera">
+                    <div class="modal-body">
+                        <input type="hidden" id="cameraId"> <!-- Escondido, usado para edição -->
+                        
+                        <!-- Linha de Nome e Status -->
+                        <div class="row mb-3">
+                            <div class="col-8">
+                                <label class="form-label">Nome da Câmera</label>
+                                <input type="text" class="form-control" id="inputNome" placeholder="Ex: Câmera Corredor" required>
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label">Status</label>
+                                <select class="form-select" id="selectStatus">
+                                    <option value="Online">Online</option>
+                                    <option value="Conectando...">Conectando...</option>
+                                    <option value="Offline">Offline</option>
+                                    <option value="Falha no Login">Falha no Login</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Grupo (Edifício/Setor)</label>
+                            <select class="form-select" id="selectGrupo" required>
+                                <!-- Opções injetadas via JS -->
+                            </select>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-8">
+                                <label class="form-label">Endereço IP</label>
+                                <input type="text" class="form-control" id="inputIp" placeholder="192.168.X.X" required>
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label">Porta</label>
+                                <input type="number" class="form-control" id="inputPorta" value="554" required>
+                            </div>
+                        </div>
+
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="checkAutenticacao">
+                            <label class="form-check-label" for="checkAutenticacao">Requer Autenticação</label>
+                        </div>
+
+                        <div id="camposAutenticacao" class="d-none bg-light p-3 border rounded mb-3">
+                            <div class="mb-2">
+                                <label class="form-label">Usuário</label>
+                                <input type="text" class="form-control" id="inputUser" placeholder="admin">
+                            </div>
+                            <div>
+                                <label class="form-label">Senha</label>
+                                <input type="password" class="form-control" id="inputPass">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Salvar Câmera</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Gerenciar Grupos -->
+    <div class="modal fade" id="modalGrupos" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Gerenciar Grupos</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formNovoGrupo" class="d-flex mb-3">
+                        <input type="text" class="form-control me-2" id="inputNovoGrupo" placeholder="Novo grupo..." required>
+                        <button type="submit" class="btn btn-success"><i class="bi bi-plus"></i></button>
+                    </form>
+                    <ul class="list-group" id="listaGruposModal">
+                        <!-- Lista de grupos injetada pelo JS -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Seu JS -->
+    <script src="script/main.js"></script>
+</body>
+</html>
