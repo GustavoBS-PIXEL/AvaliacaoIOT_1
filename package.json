@@ -1,0 +1,17 @@
+{
+  "name": "painel-seguranca-iot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Painel local para cadastro e visualização de câmeras IP via MediaMTX",
+  "scripts": {
+    "setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-mediamtx.ps1",
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.11.1"
+  }
+}

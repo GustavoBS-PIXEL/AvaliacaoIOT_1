@@ -1,0 +1,7 @@
+data/database.json
+data/database.json.tmp
+node_modules/
+vendor/
+auto.crt
+auto.key
+*.log

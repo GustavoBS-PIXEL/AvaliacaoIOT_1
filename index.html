@@ -3,149 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Painel local para gerenciamento e visualização de câmeras IP">
     <title>Painel de Segurança IoT</title>
-    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <!-- Seu CSS personalizado -->
     <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="bg-light">
-
-    <!-- Barra de Navegação -->
-    <nav class="navbar navbar-dark bg-dark mb-4 shadow-sm">
-        <div class="container">
+<body class="bg-body-tertiary">
+    <nav class="navbar navbar-dark bg-dark shadow-sm">
+        <div class="container py-2 gap-3">
             <span class="navbar-brand mb-0 h1"><i class="bi bi-shield-check text-success"></i> Gestão de Segurança Patrimonial</span>
-            <div>
-                <button class="btn btn-outline-light me-2" data-bs-toggle="modal" data-bs-target="#modalGrupos">
-                    <i class="bi bi-folder"></i> Gerenciar Grupos
-                </button>
-                <button class="btn btn-primary" onclick="abrirModalCamera()">
-                    <i class="bi bi-plus-lg"></i> Adicionar Dispositivo
-                </button>
+            <div class="d-flex align-items-center flex-wrap gap-2 ms-auto">
+                <span id="statusServidor" class="badge rounded-pill text-bg-secondary">Verificando servidor...</span>
+                <button id="btnAtualizar" class="btn btn-sm btn-outline-light" type="button" title="Atualizar estados"><i class="bi bi-arrow-clockwise"></i></button>
+                <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#modalOnvif"><i class="bi bi-radar me-1"></i>Buscar câmeras</button>
+                <button class="btn btn-outline-light" data-bs-toggle="modal" data-bs-target="#modalGrupos"><i class="bi bi-folder"></i> Grupos</button>
+                <button class="btn btn-primary" type="button" onclick="abrirModalCamera()"><i class="bi bi-plus-lg"></i> Adicionar câmera</button>
             </div>
         </div>
     </nav>
 
-    <!-- Container Principal -->
-    <div class="container">
-        
-        <!-- Estado Vazio (Aparece quando não há câmeras) -->
-        <div id="estadoVazio" class="text-center py-5 d-none">
-            <i class="bi bi-camera-video text-muted" style="font-size: 4rem;"></i>
-            <h3 class="text-muted mt-3">Você ainda não tem nenhum dispositivo conectado</h3>
-            <p class="text-muted">Clique em "Adicionar Dispositivo" para começar a monitorar.</p>
-        </div>
+    <main class="container py-4">
+        <section id="estadoVazio" class="empty-state text-center py-5 d-none">
+            <div class="empty-icon"><i class="bi bi-camera-video"></i></div>
+            <h1 class="h3 mt-3">Nenhuma câmera cadastrada</h1>
+            <p class="text-muted mx-auto">Cadastre uma câmera IP ou um celular que forneça uma transmissão RTSP para começar o monitoramento.</p>
+            <button class="btn btn-primary" type="button" onclick="abrirModalCamera()"><i class="bi bi-plus-lg me-1"></i>Cadastrar primeira câmera</button>
+        </section>
 
-        <!-- Área de Navegação por Grupos (Abas) -->
-        <ul class="nav nav-tabs mb-4" id="grupoTabs" role="tablist">
-            <!-- As abas serão injetadas aqui pelo JS -->
-        </ul>
+        <ul class="nav nav-tabs mb-3" id="grupoTabs" role="tablist"></ul>
+        <div class="tab-content" id="grupoTabsContent"></div>
+    </main>
 
-        <!-- Área dos Vídeos (Conteúdo das Abas) -->
-        <div class="tab-content" id="grupoTabsContent">
-            <!-- As grades de câmeras serão injetadas aqui pelo JS -->
-        </div>
-
-    </div>
-
-    <!-- MODAL: Adicionar/Editar Câmera -->
-    <div class="modal fade" id="modalCamera" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
+    <div class="modal fade" id="modalOnvif" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header bg-dark text-white">
-                    <h5 class="modal-title" id="tituloModalCamera">Novo Dispositivo de Vídeo</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <h2 class="modal-title h5"><i class="bi bi-radar me-2"></i>Descobrir câmeras ONVIF</h2>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small">
+                        A busca encontra câmeras ONVIF na mesma rede local. O computador e as câmeras precisam estar na mesma sub-rede, com multicast e comunicação entre dispositivos habilitados.
+                    </div>
+
+                    <section id="etapaBuscaOnvif">
+                        <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+                            <div>
+                                <h3 class="h6 mb-1">Dispositivos disponíveis</h3>
+                                <p class="small text-muted mb-0">A busca leva aproximadamente quatro segundos.</p>
+                            </div>
+                            <button id="btnIniciarBuscaOnvif" class="btn btn-primary" type="button"><i class="bi bi-search me-1"></i>Iniciar busca</button>
+                        </div>
+                        <div id="carregandoOnvif" class="text-center py-5 d-none">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="text-muted mt-3 mb-0">Procurando câmeras ONVIF na rede...</p>
+                        </div>
+                        <div id="mensagemBuscaOnvif" class="text-center text-muted py-4">Clique em “Iniciar busca” para procurar dispositivos.</div>
+                        <div id="resultadosOnvif" class="list-group"></div>
+                    </section>
+
+                    <section id="etapaCredenciaisOnvif" class="d-none">
+                        <button id="btnVoltarBuscaOnvif" class="btn btn-sm btn-link px-0 mb-2" type="button"><i class="bi bi-arrow-left me-1"></i>Voltar aos dispositivos</button>
+                        <div id="dispositivoSelecionadoOnvif" class="border rounded bg-body-tertiary p-3 mb-3"></div>
+                        <form id="formCredenciaisOnvif">
+                            <h3 class="h6">Credenciais ONVIF</h3>
+                            <p class="small text-muted">Alguns fabricantes exigem um usuário ONVIF ou “conta da câmera” diferente da conta do aplicativo.</p>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label" for="inputUsuarioOnvif">Usuário</label>
+                                    <input class="form-control" id="inputUsuarioOnvif" autocomplete="username">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="inputSenhaOnvif">Senha</label>
+                                    <input type="password" class="form-control" id="inputSenhaOnvif" autocomplete="current-password">
+                                </div>
+                            </div>
+                            <button id="btnLerPerfisOnvif" class="btn btn-primary mt-3" type="submit"><i class="bi bi-camera-video me-1"></i>Ler perfis de vídeo</button>
+                        </form>
+                    </section>
+
+                    <section id="etapaPerfisOnvif" class="d-none">
+                        <button id="btnVoltarCredenciaisOnvif" class="btn btn-sm btn-link px-0 mb-2" type="button"><i class="bi bi-arrow-left me-1"></i>Voltar às credenciais</button>
+                        <div id="informacoesCameraOnvif" class="border rounded bg-body-tertiary p-3 mb-3"></div>
+                        <form id="formImportarOnvif">
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label" for="selectPerfilOnvif">Perfil de vídeo</label>
+                                    <select class="form-select" id="selectPerfilOnvif" required></select>
+                                    <div class="form-text">Prefira um perfil H.264. O perfil principal tem maior qualidade; o secundário consome menos rede.</div>
+                                </div>
+                                <div class="col-md-7">
+                                    <label class="form-label" for="inputNomeOnvif">Nome no painel</label>
+                                    <input class="form-control" id="inputNomeOnvif" maxlength="80" required>
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label" for="selectGrupoOnvif">Grupo</label>
+                                    <select class="form-select" id="selectGrupoOnvif" required></select>
+                                </div>
+                            </div>
+                            <button id="btnImportarOnvif" class="btn btn-success mt-3" type="submit"><i class="bi bi-plus-circle me-1"></i>Adicionar ao painel</button>
+                        </form>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalCamera" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h2 class="modal-title h5" id="tituloModalCamera">Novo dispositivo de vídeo</h2>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <form id="formCamera">
                     <div class="modal-body">
-                        <input type="hidden" id="cameraId"> <!-- Escondido, usado para edição -->
-                        
-                        <!-- Linha de Nome e Status -->
-                        <div class="row mb-3">
-                            <div class="col-8">
-                                <label class="form-label">Nome da Câmera</label>
-                                <input type="text" class="form-control" id="inputNome" placeholder="Ex: Câmera Corredor" required>
+                        <input type="hidden" id="cameraId">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label" for="inputNome">Nome da câmera</label>
+                                <input type="text" class="form-control" id="inputNome" placeholder="Ex.: Câmera da entrada" maxlength="80" required>
                             </div>
-                            <div class="col-4">
-                                <label class="form-label">Status</label>
-                                <select class="form-select" id="selectStatus">
-                                    <option value="Online">Online</option>
-                                    <option value="Conectando...">Conectando...</option>
-                                    <option value="Offline">Offline</option>
-                                    <option value="Falha no Login">Falha no Login</option>
+                            <div class="col-md-3">
+                                <label class="form-label" for="selectGrupo">Grupo</label>
+                                <select class="form-select" id="selectGrupo" required></select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label" for="selectTipoFonte">Tipo de fonte</label>
+                                <select class="form-select" id="selectTipoFonte" required>
+                                    <option value="mjpeg">IP Webcam (MJPEG)</option>
+                                    <option value="rtsp">Câmera RTSP</option>
                                 </select>
                             </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Grupo (Edifício/Setor)</label>
-                            <select class="form-select" id="selectGrupo" required>
-                                <!-- Opções injetadas via JS -->
-                            </select>
-                        </div>
-                        
-                        <div class="row mb-3">
-                            <div class="col-8">
-                                <label class="form-label">Endereço IP</label>
-                                <input type="text" class="form-control" id="inputIp" placeholder="192.168.X.X" required>
+                            <div class="col-md-7">
+                                <label class="form-label" for="inputIp">IP ou nome do dispositivo</label>
+                                <input type="text" class="form-control" id="inputIp" placeholder="Ex.: 192.168.0.25" required>
                             </div>
-                            <div class="col-4">
-                                <label class="form-label">Porta</label>
-                                <input type="number" class="form-control" id="inputPorta" value="554" required>
+                            <div class="col-md-5">
+                                <label class="form-label" for="inputPorta">Porta RTSP</label>
+                                <input type="number" class="form-control" id="inputPorta" value="554" min="1" max="65535" required>
                             </div>
-                        </div>
-
-                        <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="checkAutenticacao">
-                            <label class="form-check-label" for="checkAutenticacao">Requer Autenticação</label>
-                        </div>
-
-                        <div id="camposAutenticacao" class="d-none bg-light p-3 border rounded mb-3">
-                            <div class="mb-2">
-                                <label class="form-label">Usuário</label>
-                                <input type="text" class="form-control" id="inputUser" placeholder="admin">
+                            <div class="col-12">
+                                <label class="form-label" for="inputCaminho">Caminho RTSP</label>
+                                <input type="text" class="form-control font-monospace" id="inputCaminho" value="/ch0_0.h264" placeholder="Ex.: /live/ch00_0" required>
+                                <div class="form-text" id="ajudaCaminho">No IP Webcam, o fluxo padrão é /video.</div>
                             </div>
-                            <div>
-                                <label class="form-label">Senha</label>
-                                <input type="password" class="form-control" id="inputPass">
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="checkAutenticacao">
+                                    <label class="form-check-label" for="checkAutenticacao">A câmera exige usuário e senha</label>
+                                </div>
+                            </div>
+                            <div id="camposAutenticacao" class="col-12 d-none">
+                                <div class="row g-3 rounded bg-body-tertiary border p-2 mx-0">
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="inputUser">Usuário</label>
+                                        <input type="text" class="form-control" id="inputUser" autocomplete="username">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="inputPass">Senha</label>
+                                        <input type="password" class="form-control" id="inputPass" autocomplete="current-password">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="submit" class="btn btn-primary">Salvar Câmera</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-link-45deg me-1"></i>Salvar e conectar</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- MODAL: Gerenciar Grupos -->
     <div class="modal fade" id="modalGrupos" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-sm">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Gerenciar Grupos</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h2 class="modal-title h5">Gerenciar grupos</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
                     <form id="formNovoGrupo" class="d-flex mb-3">
-                        <input type="text" class="form-control me-2" id="inputNovoGrupo" placeholder="Novo grupo..." required>
-                        <button type="submit" class="btn btn-success"><i class="bi bi-plus"></i></button>
+                        <input type="text" class="form-control me-2" id="inputNovoGrupo" placeholder="Novo grupo..." maxlength="60" required>
+                        <button type="submit" class="btn btn-success" aria-label="Adicionar grupo"><i class="bi bi-plus"></i></button>
                     </form>
-                    <ul class="list-group" id="listaGruposModal">
-                        <!-- Lista de grupos injetada pelo JS -->
-                    </ul>
+                    <ul class="list-group" id="listaGruposModal"></ul>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Bootstrap 5 JS Bundle -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="appToast" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body"></div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Fechar"></button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Seu JS -->
     <script src="script/main.js"></script>
 </body>
 </html>
