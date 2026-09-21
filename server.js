@@ -7,10 +7,10 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { descobrirOnvif, inspecionarOnvif } = require('./lib/onvif');
+const db = require('./lib/database');
+const authService = require('./lib/auth');
 
 const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, 'data');
-const DATABASE_FILE = path.join(DATA_DIR, 'database.json');
 const MEDIA_API = process.env.MEDIA_MTX_API || 'http://127.0.0.1:9997';
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -30,31 +30,6 @@ const TIPOS = {
     '.svg': 'image/svg+xml'
 };
 
-function bancoPadrao() {
-    return { grupos: ['Geral'], cameras: [] };
-}
-
-function carregarBanco() {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    if (!fs.existsSync(DATABASE_FILE)) return bancoPadrao();
-    try {
-        const banco = JSON.parse(fs.readFileSync(DATABASE_FILE, 'utf8'));
-        return {
-            grupos: Array.isArray(banco.grupos) && banco.grupos.length ? banco.grupos : ['Geral'],
-            cameras: Array.isArray(banco.cameras) ? banco.cameras : []
-        };
-    } catch {
-        throw new Error('O arquivo data/database.json contém JSON inválido.');
-    }
-}
-
-function salvarBanco(banco) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    const temporario = `${DATABASE_FILE}.tmp`;
-    fs.writeFileSync(temporario, `${JSON.stringify(banco, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-    fs.renameSync(temporario, DATABASE_FILE);
-}
-
 function normalizarCamera(entrada, cameraAnterior = null) {
     const nome = String(entrada.nome || '').trim();
     const grupo = String(entrada.grupo || '').trim();
@@ -65,21 +40,26 @@ function normalizarCamera(entrada, cameraAnterior = null) {
     const usuario = requerAuth ? String(entrada.usuario || '').trim() : '';
     const senhaInformada = String(entrada.senha || '');
     const senha = requerAuth ? (senhaInformada || cameraAnterior?.senha || '') : '';
-    const tipoFonte = ['rtsp', 'mjpeg'].includes(entrada.tipoFonte)
+    const tipoFonte = ['rtsp', 'mjpeg', 'hls'].includes(entrada.tipoFonte)
         ? entrada.tipoFonte
         : (cameraAnterior?.tipoFonte || 'rtsp');
-    const protocolo = entrada.protocolo === 'rtsps' ? 'rtsps' : (cameraAnterior?.protocolo || 'rtsp');
+    const modoConexao = ['gateway', 'cloud'].includes(entrada.modoConexao)
+        ? entrada.modoConexao
+        : (cameraAnterior?.modoConexao || 'gateway');
+    const protocolosPermitidos = tipoFonte === 'rtsp' ? ['rtsp', 'rtsps'] : ['http', 'https'];
+    const protocoloAnterior = protocolosPermitidos.includes(cameraAnterior?.protocolo) ? cameraAnterior.protocolo : protocolosPermitidos[0];
+    const protocolo = protocolosPermitidos.includes(entrada.protocolo) ? entrada.protocolo : protocoloAnterior;
 
     if (!nome || nome.length > 80) throw new Error('Informe um nome de câmera com até 80 caracteres.');
     if (!grupo) throw new Error('Selecione um grupo.');
     if (!host || host.length > 255 || /[\s/@?#]/.test(host)) throw new Error('Informe um IP ou nome de dispositivo válido.');
     if (!Number.isInteger(porta) || porta < 1 || porta > 65535) throw new Error('A porta deve estar entre 1 e 65535.');
     if (!caminho.startsWith('/')) caminho = `/${caminho}`;
-    if (caminho.length > 500 || /[\r\n]/.test(caminho)) throw new Error('Informe um caminho RTSP válido.');
+    if (caminho.length > 500 || /[\r\n]/.test(caminho)) throw new Error('Informe um caminho de transmissão válido.');
     if (requerAuth && !usuario) throw new Error('Informe o usuário da câmera.');
     if (requerAuth && !senha) throw new Error('Informe a senha da câmera.');
 
-    return { nome, grupo, host, porta, caminho, tipoFonte, protocolo, requerAuth, usuario, senha };
+    return { nome, grupo, host, porta, caminho, tipoFonte, modoConexao, protocolo, requerAuth, usuario, senha };
 }
 
 function montarUrlRtsp(camera) {
@@ -92,7 +72,17 @@ function montarUrlRtsp(camera) {
 
 function montarUrlMjpeg(camera) {
     const host = camera.host.includes(':') && !camera.host.startsWith('[') ? `[${camera.host}]` : camera.host;
-    return `http://${host}:${camera.porta}${camera.caminho}`;
+    const protocolo = camera.protocolo === 'https' ? 'https' : 'http';
+    return `${protocolo}://${host}:${camera.porta}${camera.caminho}`;
+}
+
+function montarUrlHls(camera) {
+    const autenticacao = camera.requerAuth
+        ? `${encodeURIComponent(camera.usuario)}:${encodeURIComponent(camera.senha)}@`
+        : '';
+    const host = camera.host.includes(':') && !camera.host.startsWith('[') ? `[${camera.host}]` : camera.host;
+    const protocolo = camera.protocolo === 'https' ? 'https' : 'http';
+    return `${protocolo}://${autenticacao}${host}:${camera.porta}${camera.caminho}`;
 }
 
 function cabecalhosDaCamera(camera) {
@@ -109,6 +99,7 @@ function cameraPublica(camera, status = 'offline') {
         porta: camera.porta,
         caminho: camera.caminho,
         tipoFonte: camera.tipoFonte || 'rtsp',
+        modoConexao: camera.modoConexao || 'gateway',
         protocolo: camera.protocolo || 'rtsp',
         requerAuth: camera.requerAuth,
         usuario: camera.usuario,
@@ -139,7 +130,7 @@ async function obterStatus(camera) {
         const resposta = await mediaFetch(`/v3/paths/get/${encodeURIComponent(camera.streamPath)}`);
         if (!resposta.ok) return 'offline';
         const caminho = await resposta.json();
-        return caminho.available || caminho.ready ? 'online' : 'offline';
+        return caminho.available || caminho.ready ? 'online' : 'standby';
     } catch {
         return 'servidor-indisponivel';
     }
@@ -188,13 +179,19 @@ async function transmitirMjpeg(req, res, camera) {
     }
 }
 
+function montarConfiguracaoMediaMtx(camera) {
+    const configuracao = {
+        source: camera.tipoFonte === 'hls' ? montarUrlHls(camera) : montarUrlRtsp(camera),
+        sourceOnDemand: true,
+        sourceOnDemandCloseAfter: '10s'
+    };
+    if (camera.tipoFonte !== 'hls') configuracao.rtspTransport = 'tcp';
+    return configuracao;
+}
+
 async function sincronizarComMediaMtx(camera) {
     const nome = encodeURIComponent(camera.streamPath);
-    const configuracao = {
-        source: montarUrlRtsp(camera),
-        sourceOnDemand: true,
-        rtspTransport: 'tcp'
-    };
+    const configuracao = montarConfiguracaoMediaMtx(camera);
 
     const consulta = await mediaFetch(`/v3/config/paths/get/${nome}`);
     const endpoint = consulta.ok ? `/v3/config/paths/patch/${nome}` : `/v3/config/paths/add/${nome}`;
@@ -219,6 +216,21 @@ async function removerDoMediaMtx(camera) {
 function responderJson(res, status, corpo) {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(corpo));
+}
+
+function aplicarCabecalhosSeguranca(res) {
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net data:; img-src 'self' data: blob:; frame-src http: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+}
+
+function origemValida(req) {
+    const origin = req.headers.origin;
+    if (!origin) return true;
+    try { return new URL(origin).host === req.headers.host; } catch { return false; }
 }
 
 async function lerJson(req) {
@@ -248,15 +260,53 @@ function obterItemTemporario(cache, id) {
     return cache.get(String(id || ''));
 }
 
+async function normalizarVisualizacao(userId, entrada) {
+    const nome = String(entrada.nome || '').trim().replace(/\s+/g, ' ');
+    const grupos = [...new Set((Array.isArray(entrada.grupos) ? entrada.grupos : []).map(item => String(item).trim()).filter(Boolean))];
+    const cameraIds = [...new Set((Array.isArray(entrada.cameraIds) ? entrada.cameraIds : []).map(item => String(item).trim()).filter(Boolean))];
+    if (!nome || nome.length > 80) throw new Error('Informe um nome de visualização com até 80 caracteres.');
+    if (!grupos.length && !cameraIds.length) throw new Error('Selecione pelo menos um grupo ou uma câmera.');
+    if (grupos.length > 100 || cameraIds.length > 500) throw new Error('A seleção da visualização é grande demais.');
+    const dados = await db.listarDados(userId);
+    if (grupos.some(grupo => !dados.grupos.includes(grupo))) throw new Error('A visualização contém um grupo inválido.');
+    const idsValidos = new Set(dados.cameras.map(camera => camera.id));
+    if (cameraIds.some(id => !idsValidos.has(id))) throw new Error('A visualização contém uma câmera inválida.');
+    return { nome, grupos, cameraIds };
+}
+
 async function tratarApi(req, res, url) {
-    const banco = carregarBanco();
+    if (req.method === 'POST' && url.pathname === '/api/auth/register') {
+        const resultado = await authService.registrar(req, res, await lerJson(req));
+        if (resultado.erro) return responderJson(res, resultado.status, { erro: resultado.erro });
+        return responderJson(res, 201, resultado);
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/auth/login') {
+        const resultado = await authService.entrar(req, res, await lerJson(req));
+        if (resultado.erro) return responderJson(res, resultado.status, { erro: resultado.erro });
+        return responderJson(res, 200, resultado);
+    }
+
+    const auth = await authService.autenticar(req);
+    if (!auth) return responderJson(res, 401, { erro: 'Sua sessão expirou. Entre novamente.', codigo: 'AUTH_REQUIRED' });
+    if (!authService.validarCsrf(req, auth)) return responderJson(res, 403, { erro: 'A validação de segurança falhou. Atualize a página e tente novamente.' });
+    const userId = auth.usuario.id;
+
+    if (req.method === 'GET' && url.pathname === '/api/auth/me') {
+        return responderJson(res, 200, { usuario: auth.usuario, csrfToken: auth.csrfToken });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
+        await authService.sair(req, res, auth);
+        return responderJson(res, 200, { mensagem: 'Sessão encerrada.' });
+    }
 
     if (req.method === 'POST' && url.pathname === '/api/onvif/descobrir') {
         const dispositivos = await descobrirOnvif({ timeoutMs: 4000 });
         limparCachesOnvif();
         const resultado = dispositivos.map(dispositivo => {
             const id = crypto.randomUUID();
-            descobertasOnvif.set(id, { dispositivo, expiraEm: Date.now() + ONVIF_CACHE_TTL });
+            descobertasOnvif.set(id, { dispositivo, userId, expiraEm: Date.now() + ONVIF_CACHE_TTL });
             return {
                 id,
                 nome: dispositivo.nome,
@@ -272,7 +322,7 @@ async function tratarApi(req, res, url) {
     if (req.method === 'POST' && url.pathname === '/api/onvif/inspecionar') {
         const entrada = await lerJson(req);
         const descoberta = obterItemTemporario(descobertasOnvif, entrada.discoveryId);
-        if (!descoberta) return responderJson(res, 410, { erro: 'A descoberta expirou. Busque as câmeras novamente.' });
+        if (!descoberta || descoberta.userId !== userId) return responderJson(res, 410, { erro: 'A descoberta expirou. Busque as câmeras novamente.' });
         const inspecao = await inspecionarOnvif(descoberta.dispositivo, entrada.usuario, entrada.senha);
         const sessionId = crypto.randomUUID();
         sessoesOnvif.set(sessionId, {
@@ -280,6 +330,7 @@ async function tratarApi(req, res, url) {
             inspecao,
             usuario: String(entrada.usuario || ''),
             senha: String(entrada.senha || ''),
+            userId,
             expiraEm: Date.now() + ONVIF_CACHE_TTL
         });
         return responderJson(res, 200, {
@@ -305,10 +356,10 @@ async function tratarApi(req, res, url) {
     if (req.method === 'POST' && url.pathname === '/api/onvif/importar') {
         const entrada = await lerJson(req);
         const sessao = obterItemTemporario(sessoesOnvif, entrada.sessionId);
-        if (!sessao) return responderJson(res, 410, { erro: 'A sessão ONVIF expirou. Faça a descoberta novamente.' });
+        if (!sessao || sessao.userId !== userId) return responderJson(res, 410, { erro: 'A sessão ONVIF expirou. Faça a descoberta novamente.' });
         const perfil = sessao.inspecao.perfis.find(item => item.token === entrada.profileToken && item.stream);
         if (!perfil) return responderJson(res, 400, { erro: 'Selecione um perfil de vídeo válido.' });
-        if (!banco.grupos.includes(entrada.grupo)) return responderJson(res, 400, { erro: 'O grupo selecionado não existe.' });
+        if (!(await db.grupoExiste(userId, entrada.grupo))) return responderJson(res, 400, { erro: 'O grupo selecionado não existe.' });
 
         const dados = normalizarCamera({
             nome: entrada.nome || `${sessao.inspecao.fabricante} ${sessao.inspecao.modelo}`.trim(),
@@ -317,6 +368,7 @@ async function tratarApi(req, res, url) {
             porta: perfil.stream.porta,
             caminho: perfil.stream.caminho,
             tipoFonte: 'rtsp',
+            modoConexao: 'gateway',
             protocolo: perfil.stream.protocolo,
             requerAuth: Boolean(sessao.usuario),
             usuario: sessao.usuario,
@@ -332,8 +384,7 @@ async function tratarApi(req, res, url) {
                 profileToken: perfil.token
             }
         };
-        banco.cameras.push(camera);
-        salvarBanco(banco);
+        await db.criarCamera(userId, camera);
         sessoesOnvif.delete(entrada.sessionId);
         try {
             await sincronizarComMediaMtx(camera);
@@ -347,6 +398,10 @@ async function tratarApi(req, res, url) {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
+        const [banco, visualizacoes] = await Promise.all([
+            db.listarDados(userId),
+            db.listarVisualizacoes(userId)
+        ]);
         const disponivel = await mediaDisponivel();
         const estados = await Promise.all(banco.cameras.map(camera => {
             if ((camera.tipoFonte || 'rtsp') === 'mjpeg') return obterStatusMjpeg(camera);
@@ -355,7 +410,10 @@ async function tratarApi(req, res, url) {
         return responderJson(res, 200, {
             grupos: banco.grupos,
             cameras: banco.cameras.map((camera, indice) => cameraPublica(camera, estados[indice])),
-            mediaServerDisponivel: disponivel
+            visualizacoes,
+            mediaServerDisponivel: disponivel,
+            usuario: auth.usuario,
+            csrfToken: auth.csrfToken
         });
     }
 
@@ -363,11 +421,15 @@ async function tratarApi(req, res, url) {
         const entrada = await lerJson(req);
         const nome = String(entrada.nome || '').trim();
         if (!nome || nome.length > 60) return responderJson(res, 400, { erro: 'Informe um nome de grupo com até 60 caracteres.' });
-        if (banco.grupos.some(grupo => grupo.toLocaleLowerCase('pt-BR') === nome.toLocaleLowerCase('pt-BR'))) {
+        if (await db.grupoExiste(userId, nome)) {
             return responderJson(res, 409, { erro: 'Esse grupo já existe.' });
         }
-        banco.grupos.push(nome);
-        salvarBanco(banco);
+        try {
+            await db.criarGrupo(userId, nome);
+        } catch (error) {
+            if (error.code === 'ER_DUP_ENTRY') return responderJson(res, 409, { erro: 'Esse grupo já existe.' });
+            throw error;
+        }
         return responderJson(res, 201, { nome });
     }
 
@@ -375,21 +437,49 @@ async function tratarApi(req, res, url) {
     if (req.method === 'DELETE' && grupoMatch) {
         const nome = decodeURIComponent(grupoMatch[1]);
         if (nome === 'Geral') return responderJson(res, 400, { erro: 'O grupo Geral não pode ser excluído.' });
-        if (banco.cameras.some(camera => camera.grupo === nome)) return responderJson(res, 409, { erro: 'Mova ou exclua as câmeras deste grupo primeiro.' });
-        if (!banco.grupos.includes(nome)) return responderJson(res, 404, { erro: 'Grupo não encontrado.' });
-        banco.grupos = banco.grupos.filter(grupo => grupo !== nome);
-        salvarBanco(banco);
+        const resultado = await db.excluirGrupo(userId, nome);
+        if (resultado === 'em-uso') return responderJson(res, 409, { erro: 'Mova ou exclua as câmeras deste grupo primeiro.' });
+        if (resultado === 'inexistente') return responderJson(res, 404, { erro: 'Grupo não encontrado.' });
         return responderJson(res, 200, { mensagem: 'Grupo excluído.' });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/visualizacoes') {
+        const visualizacao = { id: crypto.randomUUID(), ...(await normalizarVisualizacao(userId, await lerJson(req))) };
+        try {
+            await db.criarVisualizacao(userId, visualizacao);
+        } catch (error) {
+            if (error.code === 'ER_DUP_ENTRY') return responderJson(res, 409, { erro: 'Já existe uma visualização com esse nome.' });
+            throw error;
+        }
+        return responderJson(res, 201, { visualizacao, mensagem: 'Visualização salva.' });
+    }
+
+    const visualizacaoMatch = url.pathname.match(/^\/api\/visualizacoes\/([^/]+)$/);
+    if (visualizacaoMatch) {
+        const id = decodeURIComponent(visualizacaoMatch[1]);
+        if (req.method === 'PUT') {
+            const visualizacao = { id, ...(await normalizarVisualizacao(userId, await lerJson(req))) };
+            try {
+                if (!(await db.atualizarVisualizacao(userId, visualizacao))) return responderJson(res, 404, { erro: 'Visualização não encontrada.' });
+            } catch (error) {
+                if (error.code === 'ER_DUP_ENTRY') return responderJson(res, 409, { erro: 'Já existe uma visualização com esse nome.' });
+                throw error;
+            }
+            return responderJson(res, 200, { visualizacao, mensagem: 'Visualização atualizada.' });
+        }
+        if (req.method === 'DELETE') {
+            if (!(await db.excluirVisualizacao(userId, id))) return responderJson(res, 404, { erro: 'Visualização não encontrada.' });
+            return responderJson(res, 200, { mensagem: 'Visualização excluída.' });
+        }
     }
 
     if (req.method === 'POST' && url.pathname === '/api/cameras') {
         const entrada = await lerJson(req);
         const dados = normalizarCamera(entrada);
-        if (!banco.grupos.includes(dados.grupo)) return responderJson(res, 400, { erro: 'O grupo selecionado não existe.' });
+        if (!(await db.grupoExiste(userId, dados.grupo))) return responderJson(res, 400, { erro: 'O grupo selecionado não existe.' });
         const id = crypto.randomUUID();
         const camera = { id, ...dados, streamPath: `camera-${id}`, criadaEm: new Date().toISOString() };
-        banco.cameras.push(camera);
-        salvarBanco(banco);
+        await db.criarCamera(userId, camera);
         if (camera.tipoFonte === 'mjpeg') {
             const status = await obterStatusMjpeg(camera);
             return responderJson(res, 201, {
@@ -407,7 +497,7 @@ async function tratarApi(req, res, url) {
 
     const sincronizarMatch = url.pathname.match(/^\/api\/cameras\/([^/]+)\/sincronizar$/);
     if (req.method === 'POST' && sincronizarMatch) {
-        const camera = banco.cameras.find(item => item.id === decodeURIComponent(sincronizarMatch[1]));
+        const camera = await db.obterCamera(userId, decodeURIComponent(sincronizarMatch[1]));
         if (!camera) return responderJson(res, 404, { erro: 'Câmera não encontrada.' });
         if ((camera.tipoFonte || 'rtsp') === 'mjpeg') {
             const status = await obterStatusMjpeg(camera);
@@ -424,7 +514,7 @@ async function tratarApi(req, res, url) {
 
     const mjpegMatch = url.pathname.match(/^\/api\/cameras\/([^/]+)\/mjpeg$/);
     if (req.method === 'GET' && mjpegMatch) {
-        const camera = banco.cameras.find(item => item.id === decodeURIComponent(mjpegMatch[1]));
+        const camera = await db.obterCamera(userId, decodeURIComponent(mjpegMatch[1]));
         if (!camera) return responderJson(res, 404, { erro: 'Câmera não encontrada.' });
         if ((camera.tipoFonte || 'rtsp') !== 'mjpeg') return responderJson(res, 400, { erro: 'Esta câmera não utiliza MJPEG.' });
         return transmitirMjpeg(req, res, camera);
@@ -433,35 +523,33 @@ async function tratarApi(req, res, url) {
     const cameraMatch = url.pathname.match(/^\/api\/cameras\/([^/]+)$/);
     if (cameraMatch) {
         const id = decodeURIComponent(cameraMatch[1]);
-        const indice = banco.cameras.findIndex(item => item.id === id);
-        if (indice < 0) return responderJson(res, 404, { erro: 'Câmera não encontrada.' });
+        const cameraAnterior = await db.obterCamera(userId, id);
+        if (!cameraAnterior) return responderJson(res, 404, { erro: 'Câmera não encontrada.' });
 
         if (req.method === 'PUT') {
             const entrada = await lerJson(req);
-            const cameraAnterior = banco.cameras[indice];
             const dados = normalizarCamera(entrada, cameraAnterior);
-            if (!banco.grupos.includes(dados.grupo)) return responderJson(res, 400, { erro: 'O grupo selecionado não existe.' });
-            banco.cameras[indice] = { ...cameraAnterior, ...dados };
-            salvarBanco(banco);
+            if (!(await db.grupoExiste(userId, dados.grupo))) return responderJson(res, 400, { erro: 'O grupo selecionado não existe.' });
+            const cameraAtualizada = { ...cameraAnterior, ...dados };
+            await db.atualizarCamera(userId, cameraAtualizada);
             if (dados.tipoFonte === 'mjpeg') {
                 await removerDoMediaMtx(cameraAnterior);
-                const status = await obterStatusMjpeg(banco.cameras[indice]);
+                const status = await obterStatusMjpeg(cameraAtualizada);
                 return responderJson(res, 200, {
-                    camera: cameraPublica(banco.cameras[indice], status),
+                    camera: cameraPublica(cameraAtualizada, status),
                     mensagem: 'Câmera MJPEG atualizada.'
                 });
             }
             try {
-                await sincronizarComMediaMtx(banco.cameras[indice]);
-                return responderJson(res, 200, { camera: cameraPublica(banco.cameras[indice]), mensagem: 'Câmera atualizada.' });
+                await sincronizarComMediaMtx(cameraAtualizada);
+                return responderJson(res, 200, { camera: cameraPublica(cameraAtualizada), mensagem: 'Câmera atualizada.' });
             } catch {
-                return responderJson(res, 200, { camera: cameraPublica(banco.cameras[indice], 'servidor-indisponivel'), aviso: 'Alterações salvas, mas o MediaMTX não respondeu.' });
+                return responderJson(res, 200, { camera: cameraPublica(cameraAtualizada, 'servidor-indisponivel'), aviso: 'Alterações salvas, mas o MediaMTX não respondeu.' });
             }
         }
 
         if (req.method === 'DELETE') {
-            const [camera] = banco.cameras.splice(indice, 1);
-            salvarBanco(banco);
+            const camera = await db.excluirCamera(userId, id);
             await removerDoMediaMtx(camera);
             return responderJson(res, 200, { mensagem: 'Câmera excluída.' });
         }
@@ -470,7 +558,7 @@ async function tratarApi(req, res, url) {
     return responderJson(res, 404, { erro: 'Rota da API não encontrada.' });
 }
 
-function servirArquivo(res, pathname) {
+function servirArquivo(req, res, pathname) {
     const relativo = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
     const arquivo = path.resolve(ROOT, relativo);
     const arquivoIndex = path.join(ROOT, 'index.html');
@@ -485,19 +573,26 @@ function servirArquivo(res, pathname) {
         responderJson(res, 404, { erro: 'Arquivo não encontrado.' });
         return;
     }
-    res.writeHead(200, { 'Content-Type': TIPOS[path.extname(arquivo).toLowerCase()] || 'application/octet-stream' });
+    res.writeHead(200, {
+        'Content-Type': TIPOS[path.extname(arquivo).toLowerCase()] || 'application/octet-stream',
+        'Cache-Control': arquivo === arquivoIndex ? 'no-store' : 'public, max-age=3600'
+    });
+    if (req.method === 'HEAD') return res.end();
     fs.createReadStream(arquivo).pipe(res);
 }
 
 async function tratarRequisicao(req, res) {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     try {
+        aplicarCabecalhosSeguranca(res);
+        if (!origemValida(req)) return responderJson(res, 403, { erro: 'Origem da requisição não permitida.' });
         if (url.pathname.startsWith('/api/')) return await tratarApi(req, res, url);
         if (!['GET', 'HEAD'].includes(req.method)) return responderJson(res, 405, { erro: 'Método não permitido.' });
-        return servirArquivo(res, decodeURIComponent(url.pathname));
+        return servirArquivo(req, res, decodeURIComponent(url.pathname));
     } catch (erro) {
         console.error(erro);
-        return responderJson(res, 400, { erro: erro.message || 'Erro interno.' });
+        const status = erro.status || (erro.code?.startsWith('ER_') ? 500 : 400);
+        return responderJson(res, status, { erro: status === 500 ? 'Ocorreu um erro interno.' : (erro.message || 'Não foi possível concluir a operação.') });
     }
 }
 
@@ -519,9 +614,9 @@ function iniciarMediaMtx() {
 function sincronizarAoIniciar() {
     setTimeout(async () => {
         if (!(await mediaDisponivel())) return;
-        const banco = carregarBanco();
-        for (const camera of banco.cameras) {
-            if ((camera.tipoFonte || 'rtsp') !== 'rtsp') continue;
+        const cameras = await db.listarTodasCameras();
+        for (const camera of cameras) {
+            if ((camera.tipoFonte || 'rtsp') === 'mjpeg') continue;
             try {
                 await sincronizarComMediaMtx(camera);
             } catch (erro) {
@@ -531,7 +626,16 @@ function sincronizarAoIniciar() {
     }, 1000);
 }
 
-function iniciar() {
+async function iniciar() {
+    try {
+        await db.inicializarBanco();
+        console.log('Banco MySQL conectado e preparado.');
+    } catch (erro) {
+        console.error(`Não foi possível conectar ao MySQL: ${erro.message}`);
+        console.error('Inicie o MySQL no XAMPP e confira DB_HOST, DB_PORT, DB_USER e DB_PASSWORD.');
+        process.exitCode = 1;
+        return;
+    }
     const processoMedia = iniciarMediaMtx();
     const servidor = http.createServer(tratarRequisicao);
     servidor.listen(PORT, HOST, () => {
@@ -549,4 +653,7 @@ function iniciar() {
 
 if (require.main === module) iniciar();
 
-module.exports = { normalizarCamera, montarUrlRtsp, montarUrlMjpeg, cameraPublica, tratarRequisicao };
+module.exports = {
+    normalizarCamera, montarUrlRtsp, montarUrlMjpeg, montarUrlHls,
+    montarConfiguracaoMediaMtx, cameraPublica, tratarRequisicao
+};

@@ -2,7 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizarCamera, montarUrlRtsp, montarUrlMjpeg, cameraPublica } = require('../server');
+const {
+    normalizarCamera, montarUrlRtsp, montarUrlMjpeg, montarUrlHls,
+    montarConfiguracaoMediaMtx, cameraPublica
+} = require('../server');
 
 test('normaliza o caminho e monta a URL RTSP', () => {
     const camera = normalizarCamera({
@@ -31,6 +34,31 @@ test('monta a URL MJPEG usada pelo IP Webcam', () => {
     assert.equal(montarUrlMjpeg(camera), 'http://192.168.0.16:8080/video');
 });
 
+test('preserva fonte em nuvem HTTPS e monta a URL HLS', () => {
+    const camera = normalizarCamera({
+        nome: 'Nuvem', grupo: 'Geral', host: 'video.exemplo.com', porta: 443,
+        caminho: '/camera/live.m3u8', tipoFonte: 'hls', modoConexao: 'cloud',
+        protocolo: 'https', requerAuth: true, usuario: 'viewer', senha: 'segredo'
+    });
+    assert.equal(camera.modoConexao, 'cloud');
+    assert.equal(camera.protocolo, 'https');
+    assert.equal(montarUrlHls(camera), 'https://viewer:segredo@video.exemplo.com:443/camera/live.m3u8');
+});
+
+test('configura origens MediaMTX somente sob demanda', () => {
+    const camera = normalizarCamera({
+        nome: 'Entrada', grupo: 'Geral', host: '192.168.1.20', porta: 554,
+        caminho: '/live', tipoFonte: 'rtsp', modoConexao: 'gateway',
+        protocolo: 'rtsp', requerAuth: false
+    });
+    assert.deepEqual(montarConfiguracaoMediaMtx(camera), {
+        source: 'rtsp://192.168.1.20:554/live',
+        sourceOnDemand: true,
+        sourceOnDemandCloseAfter: '10s',
+        rtspTransport: 'tcp'
+    });
+});
+
 test('não expõe senha na resposta pública', () => {
     const publica = cameraPublica({
         id: '1', nome: 'Entrada', grupo: 'Geral', host: '10.0.0.2', porta: 554,
@@ -38,6 +66,7 @@ test('não expõe senha na resposta pública', () => {
     });
     assert.equal(publica.possuiSenha, true);
     assert.equal('senha' in publica, false);
+    assert.equal(publica.modoConexao, 'gateway');
 });
 
 test('rejeita porta fora do intervalo', () => {

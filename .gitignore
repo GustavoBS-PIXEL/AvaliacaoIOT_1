@@ -1,5 +1,8 @@
 data/database.json
 data/database.json.tmp
+data/database.json.migrated
+data/app.key
+.env
 node_modules/
 vendor/
 auto.crt

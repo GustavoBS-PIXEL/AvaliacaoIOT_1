@@ -7,28 +7,115 @@
     <title>Painel de Segurança IoT</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=4">
 </head>
-<body class="bg-body-tertiary">
-    <nav class="navbar navbar-dark bg-dark shadow-sm">
-        <div class="container py-2 gap-3">
-            <span class="navbar-brand mb-0 h1"><i class="bi bi-shield-check text-success"></i> Gestão de Segurança Patrimonial</span>
-            <div class="d-flex align-items-center flex-wrap gap-2 ms-auto">
-                <span id="statusServidor" class="badge rounded-pill text-bg-secondary">Verificando servidor...</span>
-                <button id="btnAtualizar" class="btn btn-sm btn-outline-light" type="button" title="Atualizar estados"><i class="bi bi-arrow-clockwise"></i></button>
-                <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#modalOnvif"><i class="bi bi-radar me-1"></i>Buscar câmeras</button>
-                <button class="btn btn-outline-light" data-bs-toggle="modal" data-bs-target="#modalGrupos"><i class="bi bi-folder"></i> Grupos</button>
-                <button class="btn btn-primary" type="button" onclick="abrirModalCamera()"><i class="bi bi-plus-lg"></i> Adicionar câmera</button>
+<body>
+    <section id="authView" class="auth-page">
+        <div class="auth-brand">
+            <span class="brand-mark"><i class="bi bi-shield-check"></i></span>
+            <div>
+                <strong>Sentinela</strong>
+                <span>Monitoramento residencial</span>
+            </div>
+        </div>
+        <div class="auth-card">
+            <div class="auth-intro">
+                <span class="eyebrow">Acesso protegido</span>
+                <h1 id="authTitle">Entre no seu painel</h1>
+                <p id="authSubtitle">Acompanhe suas câmeras em um único lugar.</p>
+            </div>
+            <div id="authAlert" class="alert alert-danger d-none" role="alert"></div>
+            <form id="formLogin" novalidate>
+                <div class="mb-3">
+                    <label class="form-label" for="loginEmail">E-mail</label>
+                    <input class="form-control form-control-lg" type="email" id="loginEmail" autocomplete="username" maxlength="190" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="loginSenha">Senha</label>
+                    <div class="password-field">
+                        <input class="form-control form-control-lg" type="password" id="loginSenha" autocomplete="current-password" maxlength="128" required>
+                        <button class="password-toggle" type="button" data-password-target="loginSenha" aria-label="Mostrar senha"><i class="bi bi-eye"></i></button>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-lg w-100 mt-3 auth-submit" type="submit">Entrar</button>
+            </form>
+            <form id="formCadastro" class="d-none" novalidate>
+                <div class="mb-3">
+                    <label class="form-label" for="cadastroNome">Nome</label>
+                    <input class="form-control form-control-lg" id="cadastroNome" autocomplete="name" maxlength="80" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="cadastroEmail">E-mail</label>
+                    <input class="form-control form-control-lg" type="email" id="cadastroEmail" autocomplete="username" maxlength="190" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="cadastroSenha">Senha</label>
+                    <div class="password-field">
+                        <input class="form-control form-control-lg" type="password" id="cadastroSenha" autocomplete="new-password" minlength="10" maxlength="128" required>
+                        <button class="password-toggle" type="button" data-password-target="cadastroSenha" aria-label="Mostrar senha"><i class="bi bi-eye"></i></button>
+                    </div>
+                    <div class="form-text">Use pelo menos 10 caracteres, uma letra e um número.</div>
+                </div>
+                <div class="mt-3 mb-2">
+                    <label class="form-label" for="cadastroConfirmarSenha">Confirmar senha</label>
+                    <div class="password-field">
+                        <input class="form-control form-control-lg" type="password" id="cadastroConfirmarSenha" autocomplete="new-password" minlength="10" maxlength="128" required>
+                        <button class="password-toggle" type="button" data-password-target="cadastroConfirmarSenha" aria-label="Mostrar senha"><i class="bi bi-eye"></i></button>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-lg w-100 mt-3 auth-submit" type="submit">Criar conta</button>
+            </form>
+            <p class="auth-switch mb-0"><span id="authSwitchText">Ainda não tem uma conta?</span> <button id="btnAlternarAuth" class="btn btn-link p-0" type="button">Criar conta</button></p>
+        </div>
+        <p class="auth-footnote"><i class="bi bi-lock me-1"></i> Sessão privada e credenciais protegidas</p>
+    </section>
+
+    <div id="appView" class="d-none">
+    <nav class="app-navbar">
+        <div class="container-fluid px-3 px-lg-4 py-3 d-flex align-items-center gap-3">
+            <a class="app-brand" href="#" aria-label="Página inicial"><span class="brand-mark brand-mark-sm"><i class="bi bi-shield-check"></i></span><span>Sentinela</span></a>
+            <div class="d-flex align-items-center gap-2 ms-auto">
+                <span id="statusServidor" class="server-status"><span class="status-dot"></span><span class="status-label">Verificando servidor</span></span>
+                <button class="btn btn-icon" type="button" data-bs-toggle="modal" data-bs-target="#modalGuiaConexao" title="Guia para conectar câmeras" aria-label="Abrir guia de conexão"><i class="bi bi-question-lg"></i></button>
+                <button id="btnAtualizar" class="btn btn-icon" type="button" title="Atualizar estados" aria-label="Atualizar estados"><i class="bi bi-arrow-clockwise"></i></button>
+                <div class="dropdown">
+                    <button class="user-menu" type="button" data-bs-toggle="dropdown" aria-expanded="false"><span id="userInitial">U</span><span id="userName" class="d-none d-md-inline">Usuário</span><i class="bi bi-chevron-down"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><span id="userEmail" class="dropdown-item-text small text-muted"></span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button id="btnLogout" class="dropdown-item" type="button"><i class="bi bi-box-arrow-right me-2"></i>Sair</button></li>
+                    </ul>
+                </div>
             </div>
         </div>
     </nav>
 
-    <main class="container py-4">
+    <main class="container-fluid px-3 px-lg-4 py-4">
+        <header class="dashboard-header">
+            <div>
+                <span class="eyebrow">Visão geral</span>
+                <h1>Suas câmeras</h1>
+                <p>Visualize e gerencie os dispositivos conectados à sua rede.</p>
+            </div>
+            <div class="dashboard-actions">
+                <button class="btn btn-light border" type="button" data-bs-toggle="modal" data-bs-target="#modalVisualizacoes"><i class="bi bi-grid-3x3-gap me-2"></i>Modo de visualização</button>
+                <button class="btn btn-light border" type="button" data-bs-toggle="modal" data-bs-target="#modalGrupos"><i class="bi bi-folder me-2"></i>Grupos</button>
+                <button class="btn btn-light border" type="button" data-bs-toggle="modal" data-bs-target="#modalOnvif"><i class="bi bi-radar me-2"></i>Buscar na rede</button>
+                <button class="btn btn-primary btnAbrirCamera" type="button"><i class="bi bi-plus-lg me-2"></i>Adicionar câmera</button>
+            </div>
+        </header>
+
+        <section class="overview-strip" aria-label="Resumo do painel">
+            <div><span id="totalCameras">0</span><small>Câmeras</small></div>
+            <div><span id="camerasOnline">0</span><small>Online</small></div>
+            <div><span id="totalGrupos">1</span><small>Grupos</small></div>
+        </section>
+
         <section id="estadoVazio" class="empty-state text-center py-5 d-none">
             <div class="empty-icon"><i class="bi bi-camera-video"></i></div>
-            <h1 class="h3 mt-3">Nenhuma câmera cadastrada</h1>
-            <p class="text-muted mx-auto">Cadastre uma câmera IP ou um celular que forneça uma transmissão RTSP para começar o monitoramento.</p>
-            <button class="btn btn-primary" type="button" onclick="abrirModalCamera()"><i class="bi bi-plus-lg me-1"></i>Cadastrar primeira câmera</button>
+            <h2 class="h4 mt-3">Seu painel está pronto</h2>
+            <p class="text-muted mx-auto">Adicione sua primeira câmera manualmente ou procure dispositivos compatíveis na rede.</p>
+            <button class="btn btn-primary btnAbrirCamera" type="button"><i class="bi bi-plus-lg me-1"></i>Cadastrar primeira câmera</button>
         </section>
 
         <ul class="nav nav-tabs mb-3" id="grupoTabs" role="tablist"></ul>
@@ -36,7 +123,7 @@
     </main>
 
     <div class="modal fade" id="modalOnvif" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header bg-dark text-white">
                     <h2 class="modal-title h5"><i class="bi bi-radar me-2"></i>Descobrir câmeras ONVIF</h2>
@@ -110,8 +197,84 @@
         </div>
     </div>
 
+    <div class="modal fade" id="modalGuiaConexao" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <div>
+                        <h2 class="modal-title h5 mb-1"><i class="bi bi-compass me-2"></i>Guia para conectar sua câmera</h2>
+                        <p class="small text-white-50 mb-0">Encontre os dados corretos mesmo sem experiência com redes.</p>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body guide-body">
+                    <section class="guide-quick-start">
+                        <span class="guide-step">Caminho mais fácil</span>
+                        <div>
+                            <h3 class="h6 mb-1">Está perto da câmera e na mesma rede Wi-Fi?</h3>
+                            <p class="mb-2">Feche este guia e use <strong>Buscar na rede</strong>. Se a câmera tiver ONVIF habilitado, o sistema encontra IP, porta e caminho automaticamente.</p>
+                            <button id="btnGuiaBuscarOnvif" class="btn btn-sm btn-primary" type="button"><i class="bi bi-radar me-1"></i>Buscar automaticamente</button>
+                        </div>
+                    </section>
+
+                    <div class="guide-grid">
+                        <section class="guide-card">
+                            <span class="guide-number">1</span>
+                            <h3>Escolha a forma de conexão</h3>
+                            <p><strong>Gateway local</strong> é para câmeras dentro da casa ou empresa. O gateway precisa estar ligado nessa rede e só busca o vídeo quando alguém abre o painel.</p>
+                            <p><strong>Saída em nuvem</strong> é para uma URL pública fornecida pela câmera ou fabricante. Ela precisa funcionar fora do Wi-Fi local e usar RTSP, RTSPS, HLS ou MJPEG.</p>
+                        </section>
+                        <section class="guide-card">
+                            <span class="guide-number">2</span>
+                            <h3>Como encontrar o IP</h3>
+                            <ol>
+                                <li>Abra o aplicativo oficial da câmera e procure “Informações”, “Rede” ou “LAN”.</li>
+                                <li>Ou entre no painel do roteador e abra “Dispositivos conectados” ou “Clientes DHCP”.</li>
+                                <li>Procure pelo nome ou fabricante da câmera e copie algo como <code>192.168.1.50</code>.</li>
+                            </ol>
+                            <p class="guide-note">Para conexão em nuvem, use o domínio público entregue pelo fornecedor, não o IP local.</p>
+                        </section>
+                        <section class="guide-card">
+                            <span class="guide-number">3</span>
+                            <h3>Tipo, protocolo e porta</h3>
+                            <dl class="guide-definition-list">
+                                <div><dt>RTSP</dt><dd>Mais comum em câmeras IP e ONVIF. Porta típica: <code>554</code>.</dd></div>
+                                <div><dt>RTSPS</dt><dd>Versão segura do RTSP. Use a porta informada pelo fabricante.</dd></div>
+                                <div><dt>MJPEG</dt><dd>Comum em aplicativos como IP Webcam. Exemplo: porta <code>8080</code>.</dd></div>
+                                <div><dt>HLS</dt><dd>URL HTTP(S) terminada normalmente em <code>.m3u8</code>, útil para fontes em nuvem.</dd></div>
+                            </dl>
+                        </section>
+                        <section class="guide-card">
+                            <span class="guide-number">4</span>
+                            <h3>Descubra o caminho</h3>
+                            <p>O caminho é tudo o que aparece depois do IP e da porta na URL fornecida pelo fabricante.</p>
+                            <div class="guide-example"><span>URL completa</span><code>rtsp://admin:senha@192.168.1.50:554/Streaming/Channels/101</code></div>
+                            <div class="guide-example"><span>Preencha</span><code>IP 192.168.1.50 · porta 554 · caminho /Streaming/Channels/101</code></div>
+                            <p class="guide-note">Não sabe o caminho? Pesquise no manual por “RTSP URL” ou habilite ONVIF e use a busca automática.</p>
+                        </section>
+                    </div>
+
+                    <section class="guide-checklist">
+                        <div>
+                            <h3 class="h6"><i class="bi bi-check2-circle me-2"></i>Antes de salvar</h3>
+                            <ul>
+                                <li>Teste a URL no VLC quando possível.</li>
+                                <li>Prefira vídeo H.264 para maior compatibilidade no navegador.</li>
+                                <li>Crie um usuário exclusivo e sem permissão administrativa na câmera.</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3 class="h6"><i class="bi bi-exclamation-circle me-2"></i>Importante sobre “nuvem”</h3>
+                            <p>Uma câmera que funciona apenas no aplicativo do fabricante pode usar uma nuvem proprietária. Ela só poderá ser cadastrada aqui se o fabricante fornecer uma URL padrão RTSP, RTSPS, HLS ou MJPEG.</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="modalCamera" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header bg-dark text-white">
                     <h2 class="modal-title h5" id="tituloModalCamera">Novo dispositivo de vídeo</h2>
@@ -121,6 +284,20 @@
                     <div class="modal-body">
                         <input type="hidden" id="cameraId">
                         <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Forma de conexão</label>
+                                <div class="connection-mode-grid" role="radiogroup" aria-label="Forma de conexão da câmera">
+                                    <label class="connection-mode-option">
+                                        <input class="form-check-input" type="radio" name="modoConexao" value="gateway" checked>
+                                        <span><strong><i class="bi bi-router me-2"></i>Gateway local</strong><small>Câmera na rede da casa ou empresa. Transmissão aberta sob demanda.</small></span>
+                                    </label>
+                                    <label class="connection-mode-option">
+                                        <input class="form-check-input" type="radio" name="modoConexao" value="cloud">
+                                        <span><strong><i class="bi bi-cloud-check me-2"></i>Saída em nuvem</strong><small>Endereço público fornecido pela câmera ou pelo serviço de nuvem.</small></span>
+                                    </label>
+                                </div>
+                                <div id="ajudaModoConexao" class="form-text">O servidor/gateway deve estar na mesma rede da câmera e permanecer ligado.</div>
+                            </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="inputNome">Nome da câmera</label>
                                 <input type="text" class="form-control" id="inputNome" placeholder="Ex.: Câmera da entrada" maxlength="80" required>
@@ -132,22 +309,27 @@
                             <div class="col-md-3">
                                 <label class="form-label" for="selectTipoFonte">Tipo de fonte</label>
                                 <select class="form-select" id="selectTipoFonte" required>
-                                    <option value="mjpeg">IP Webcam (MJPEG)</option>
                                     <option value="rtsp">Câmera RTSP</option>
+                                    <option value="mjpeg">Câmera MJPEG</option>
+                                    <option value="hls">Transmissão HLS</option>
                                 </select>
                             </div>
-                            <div class="col-md-7">
-                                <label class="form-label" for="inputIp">IP ou nome do dispositivo</label>
+                            <div class="col-md-5">
+                                <label class="form-label" for="inputIp" id="labelHostCamera">IP ou nome do dispositivo</label>
                                 <input type="text" class="form-control" id="inputIp" placeholder="Ex.: 192.168.0.25" required>
                             </div>
-                            <div class="col-md-5">
-                                <label class="form-label" for="inputPorta">Porta RTSP</label>
+                            <div class="col-md-3">
+                                <label class="form-label" for="selectProtocolo">Protocolo</label>
+                                <select class="form-select" id="selectProtocolo" required></select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="inputPorta" id="labelPortaCamera">Porta</label>
                                 <input type="number" class="form-control" id="inputPorta" value="554" min="1" max="65535" required>
                             </div>
                             <div class="col-12">
-                                <label class="form-label" for="inputCaminho">Caminho RTSP</label>
+                                <label class="form-label" for="inputCaminho" id="labelCaminhoCamera">Caminho da transmissão</label>
                                 <input type="text" class="form-control font-monospace" id="inputCaminho" value="/ch0_0.h264" placeholder="Ex.: /live/ch00_0" required>
-                                <div class="form-text" id="ajudaCaminho">No IP Webcam, o fluxo padrão é /video.</div>
+                                <div class="form-text" id="ajudaCaminho">Use o caminho RTSP exato informado pelo fabricante.</div>
                             </div>
                             <div class="col-12">
                                 <div class="form-check form-switch">
@@ -179,7 +361,7 @@
     </div>
 
     <div class="modal fade" id="modalGrupos" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-sm">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2 class="modal-title h5">Gerenciar grupos</h2>
@@ -196,6 +378,80 @@
         </div>
     </div>
 
+    <div class="modal fade" id="modalVisualizacoes" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title h5 mb-1"><i class="bi bi-grid-3x3-gap me-2"></i>Modos de visualização</h2>
+                        <p class="small text-muted mb-0">Salve combinações de grupos e câmeras para abrir um mosaico em tela cheia.</p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="view-settings-layout">
+                        <aside class="view-presets-panel">
+                            <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                                <h3 class="h6 mb-0">Visualizações salvas</h3>
+                                <button id="btnNovaVisualizacao" class="btn btn-sm btn-outline-primary" type="button"><i class="bi bi-plus-lg me-1"></i>Nova</button>
+                            </div>
+                            <div id="estadoVisualizacoesVazio" class="view-presets-empty">Nenhuma visualização salva.</div>
+                            <div id="listaVisualizacoes" class="view-presets-list"></div>
+                        </aside>
+                        <section class="view-editor-panel">
+                            <form id="formVisualizacao">
+                                <input id="visualizacaoId" type="hidden">
+                                <div class="mb-4">
+                                    <label class="form-label fw-semibold" for="visualizacaoNome">Nome da visualização</label>
+                                    <input id="visualizacaoNome" class="form-control" maxlength="80" placeholder="Ex.: Casa + Garagem" required>
+                                </div>
+                                <div class="mb-4">
+                                    <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                                        <div>
+                                            <h3 class="h6 mb-1">Grupos completos</h3>
+                                            <p class="small text-muted mb-0">Novas câmeras adicionadas a um grupo também aparecerão automaticamente.</p>
+                                        </div>
+                                        <button id="btnSelecionarTodosGrupos" class="btn btn-sm btn-link text-decoration-none" type="button">Selecionar todos</button>
+                                    </div>
+                                    <div id="opcoesGruposVisualizacao" class="selection-grid"></div>
+                                </div>
+                                <div class="mb-4">
+                                    <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                                        <div>
+                                            <h3 class="h6 mb-1">Câmeras específicas</h3>
+                                            <p class="small text-muted mb-0">Use para incluir somente dispositivos individuais.</p>
+                                        </div>
+                                        <button id="btnLimparCamerasVisualizacao" class="btn btn-sm btn-link text-decoration-none" type="button">Limpar</button>
+                                    </div>
+                                    <div id="opcoesCamerasVisualizacao" class="selection-grid selection-grid-cameras"></div>
+                                </div>
+                                <div class="d-flex justify-content-end gap-2">
+                                    <button id="btnCancelarVisualizacao" class="btn btn-light border" type="button">Limpar</button>
+                                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-2"></i>Salvar visualização</button>
+                                </div>
+                            </form>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <section id="modoVisualizacao" class="view-mode d-none" aria-label="Modo de visualização de câmeras">
+        <header class="view-mode-header">
+            <div>
+                <span>Visualização</span>
+                <strong id="tituloModoVisualizacao"></strong>
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <small id="contadorModoVisualizacao"></small>
+                <button id="btnSairModoVisualizacao" class="btn btn-sm btn-light" type="button"><i class="bi bi-fullscreen-exit me-2"></i>Sair</button>
+            </div>
+        </header>
+        <div id="gradeModoVisualizacao" class="view-mode-grid"></div>
+    </section>
+    </div>
+
     <div class="toast-container position-fixed bottom-0 end-0 p-3">
         <div id="appToast" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true">
             <div class="d-flex">
@@ -206,6 +462,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="script/main.js"></script>
+    <script src="script/main.js?v=4"></script>
 </body>
 </html>
